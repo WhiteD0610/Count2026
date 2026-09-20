@@ -119,7 +119,7 @@ body {
   backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px);
   box-shadow: inset 0 0.5px 0 var(--separator); }
 .sum { flex: 1; min-width: 0; }
-.sum .cap { font-size: 13px; color: var(--label-2); }
+.sum .cap { font-size: 13px; color: var(--label-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sum .cap span { font-weight: 590; color: var(--label); }
 .sum .val { font-variant-numeric: tabular-nums; }
 .sum .val { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -288,6 +288,9 @@ const waiting = () => orders.filter(o => o.status === 'waiting' || o.status === 
 const cartQty = () => Object.values(cart).reduce((a, n) => a + n, 0);
 const priceOf = pid => { const p = (cfg && cfg.products || []).find(x => x.id === pid); return p ? Number(p.price) || 0 : 0; };
 const cartAmt = () => Object.keys(cart).reduce((a, pid) => a + priceOf(pid) * cart[pid], 0);
+const pcsOf = pid => { const p = (cfg && cfg.products || []).find(x => x.id === pid); return p ? Number(p.pcs) || 0 : 0; };
+const cartPcs = () => Object.keys(cart).reduce((a, pid) => a + pcsOf(pid) * cart[pid], 0);
+const orderPcs = o => o.items.reduce((a, i) => a + pcsOf(i.productId) * i.qty, 0);
 const itemsText = o => o.items.map(i => i.name + '×' + i.qty).join(' / ');
 
 // ---------- 注文操作 ----------
@@ -317,6 +320,7 @@ function send() {
     return { productId: pid, name: p.name, price: Number(p.price) || 0, qty: cart[pid] };
   });
   const amount = items.reduce((a, i) => a + i.price * i.qty, 0);
+  const pcs = items.reduce((a, i) => a + pcsOf(i.productId) * i.qty, 0);
   const o = { id: uid(), ticket, ts: Date.now(), items, status: 'waiting' };
   orders.push(o); store(K.orders, orders);
   enqueue({ type: 'order', id: o.id, ticket: o.ticket, ts: o.ts, items });
@@ -325,7 +329,7 @@ function send() {
   cart = {}; cartLog = [];
   if (navigator.vibrate) navigator.vibrate([16, 40, 16]);
   render();
-  toast('No.' + no + ' を送信（' + qty + '個 ' + yen(amount) + '）', '取り消す', () => voidOrder(o.id));
+  toast('No.' + no + ' を送信（' + qty + '個 ' + pcs + '本 ' + yen(amount) + '）', '取り消す', () => voidOrder(o.id));
 }
 function done(id) {
   const o = orders.find(x => x.id === id);
@@ -429,7 +433,7 @@ function render() {
       const c = cart[p.id] || 0;
       return `<div class="tile" role="button" tabindex="0" data-id="${esc(p.id)}" style="--tc:${esc(p.color || '#FF9500')}">
         <div class="bar"></div>
-        <div><div class="tile-name">${esc(p.name)}</div><div class="tile-price">${yen(p.price)}</div></div>
+        <div><div class="tile-name">${esc(p.name)}</div><div class="tile-price">${yen(p.price)}${p.pcs ? ' ・ ' + p.pcs + '本入' : ''}</div></div>
         <div class="tile-count ${c ? 'on' : ''}">${c}<small>個</small></div>
         <button class="minus" data-minus="${esc(p.id)}" aria-label="${esc(p.name)}を1個減らす" ${c ? '' : 'disabled'}>
           <span><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="12" x2="18" y2="12"/></svg></span>
@@ -438,7 +442,7 @@ function render() {
     }).join('');
   }
   const q = cartQty();
-  $('#cartQty').textContent = q + '個';
+  $('#cartQty').textContent = q + '個' + (cartPcs() ? ' ・ ' + cartPcs() + '本' : '');
   $('#cartAmt').textContent = yen(cartAmt());
   $('#sendBtn').disabled = !q;
   $('#sendBtn').textContent = q ? 'No.' + ticket + ' 送信' : '送信';
@@ -452,7 +456,7 @@ function render() {
       <div class="wno">${o.ticket}<small>整理券</small></div>
       <div class="witems">
         ${rdy ? '<div class="wready">準備完了</div>' : '<div class="wcooking">調理中</div>'}
-        ${esc(itemsText(o))}<div class="sub">${hm(o.ts)} 受付 ・ ${o.items.reduce((a, x) => a + x.qty, 0)}個</div>
+        ${esc(itemsText(o))}<div class="sub">${hm(o.ts)} 受付 ・ ${o.items.reduce((a, x) => a + x.qty, 0)}個${orderPcs(o) ? '（' + orderPcs(o) + '本）' : ''}</div>
       </div>
       <div class="wact">
         <button class="btn btn-green sm" data-done="${esc(o.id)}" ${rdy ? '' : 'disabled'}>お渡し完了</button>
