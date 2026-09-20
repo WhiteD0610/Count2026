@@ -91,6 +91,9 @@ body {
 .minus .ic { width: 16px; height: 16px; }
 .minus:disabled { visibility: hidden; }
 
+.warn-bar { margin: var(--sp-3) var(--sp-4) 0; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--red) 14%, transparent); color: var(--red);
+  font-size: 20px; font-weight: 700; letter-spacing: -0.01em; text-align: center; }
 .empty { margin: 56px var(--sp-6); text-align: center; color: var(--label-2); font-size: 15px; }
 .empty .ic { width: 40px; height: 40px; margin: 0 auto var(--sp-3); color: var(--label-3); }
 
@@ -180,6 +183,10 @@ body {
 .chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-3) 0; }
 .chips button { min-height: 40px; padding: 0 var(--sp-3); border: 0; border-radius: var(--r-md); background: var(--fill);
   font: inherit; font-size: 15px; color: var(--label); cursor: pointer; }
+.row.pick { width: 100%; border: 0; background: none; font: inherit; color: var(--label); text-align: left;
+  cursor: pointer; min-height: 60px; justify-content: space-between; }
+.row.pick:active { background: var(--fill); }
+.row .sub2 { font-size: 13px; color: var(--label-2); }
 .cap-line { font-size: 13px; color: var(--label-2); margin: var(--sp-3) var(--sp-3) 0; }
 .tgrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--sp-2); }
 .tgrid button { min-height: 52px; border: 0; border-radius: var(--r-md); background: var(--surface); font: inherit;
@@ -212,6 +219,8 @@ body {
       </div>
     </div>
   </header>
+
+  <div class="warn-bar" id="warnBar" hidden></div>
 
   <main>
     <section id="paneSale">
@@ -333,17 +342,17 @@ function reopen(id) {
   enqueue({ type: 'reopen', id });
   render();
 }
-function voidOrder(id, reason) {
+function voidOrder(id, reason, disposition) {
   const o = orders.find(x => x.id === id);
   if (!o || o.status === 'void') return;
-  const wasReady = o.status === 'ready';
+  const disp = disposition || (o.status === 'ready' ? 'stock' : 'none');
   o.status = 'void'; store(K.orders, orders);
   enqueue({
-    type: 'void', id, reason: reason || '',
-    surplus: wasReady ? o.items.map(i => ({ productId: i.productId, qty: i.qty })) : null
+    type: 'void', id, reason: reason || '', disposition: disp,
+    surplus: disp === 'stock' ? o.items.map(i => ({ productId: i.productId, qty: i.qty })) : null
   });
   render();
-  toast('No.' + o.ticket + ' を取り消しました' + (wasReady ? '（余剰在庫に戻しました）' : ''));
+  toast('No.' + o.ticket + ' を取消（' + (disp === 'stock' ? '余剰在庫へ' : disp === 'waste' ? '廃棄' : '材料は未使用') + '）');
 }
 
 // 長押し（3秒）で取消
@@ -375,8 +384,7 @@ function holdCancel() {
 function askVoid(id) {
   const o = orders.find(x => x.id === id);
   if (!o) return;
-  if (o.status === 'ready') openSheet(true, 'reason', id);   // 調理済み → 理由を入力
-  else voidOrder(id);
+  openSheet(true, 'reason', id);
 }
 function setTicket(n) {
   ticket = n; store(K.ticket, ticket);
@@ -402,6 +410,12 @@ function render() {
   $('#paneWait').hidden = pane !== 'wait';
   $('#bottomSale').hidden = pane !== 'sale';
   document.body.style.paddingBottom = pane === 'sale' ? 'calc(96px + env(safe-area-inset-bottom))' : '32px';
+
+  const wb = $('#warnBar');
+  if (stock && stock.warn) {
+    wb.hidden = false;
+    wb.textContent = 'チュロス在庫 残り' + stock.leftPieces + '本（警告ライン ' + stock.warnAt + '本）';
+  } else wb.hidden = true;
 
   const products = (cfg && cfg.products || []).filter(p => p.active !== false);
   const grid = $('#grid'), empty = $('#empty');
@@ -457,9 +471,12 @@ function flash(pid) {
 }
 
 let sheetMode = null, targetId = null;
+let stock = null;
+let rstep = 'cat', rdata = { cat: '', name: '', detail: '' };
 function openSheet(v, mode, id) {
   sheetMode = v ? mode : null;
   targetId = v ? (id || null) : null;
+  if (v && mode === 'reason') { rstep = 'cat'; rdata = { cat: '', name: '', detail: '' }; }
   $('#sheet').classList.toggle('open', v); $('#scrim').classList.toggle('open', v);
   $('#sheet').setAttribute('aria-hidden', !v);
   if (v) renderSheet();
@@ -467,16 +484,33 @@ function openSheet(v, mode, id) {
 function renderSheet() {
   if (!sheetMode) return;
   if (sheetMode === 'reason') {
-    if ($('#reasonText')) return;                    // 入力中は作り直さない
     const o = orders.find(x => x.id === targetId);
     if (!o) { openSheet(false); return; }
+    if (rstep === 'other' && $('#rName')) return;        // 入力中は作り直さない
+    const cooked = o.status === 'ready';
     $('#sheetTitle').textContent = 'No.' + o.ticket + ' を取消';
-    $('#sheetBody').innerHTML =
-      '<p class="cap-line" style="margin:0 4px 12px">' + esc(itemsText(o)) + ' は調理済みです。取消理由を入力すると、キッチンの余剰在庫に戻ります。</p>' +
-      '<input class="field" id="reasonText" placeholder="取消理由" value="">' +
-      '<div class="chips">' + ['お客様都合', '渡し間違い', '時間切れ', '商品不良']
-        .map(r => `<button data-reason="${r}">${r}</button>`).join('') + '</div>' +
-      '<button class="btn btn-danger block" id="voidGo">この注文を取消して在庫に戻す</button>';
+    if (rstep === 'cat') {
+      $('#sheetBody').innerHTML =
+        `<p class="cap-line" style="margin:0 4px 12px">${esc(itemsText(o))}${cooked ? '（調理済み）' : '（調理前）'}・取消理由を選んでください。</p>
+         <div class="list">
+           <button class="row pick" data-cat="商品不良"><span class="n">商品不良</span><span class="sub2">${cooked ? '廃棄する' : '材料は戻ります'}</span></button>
+           <button class="row pick" data-cat="お客様都合キャンセル"><span class="n">お客様都合キャンセル</span><span class="sub2">${cooked ? '余剰在庫に戻す' : '材料は戻ります'}</span></button>
+           <button class="row pick" data-cat="その他"><span class="n">その他</span><span class="sub2">担当者名と詳細を入力</span></button>
+         </div>`;
+    } else if (rstep === 'other') {
+      $('#sheetBody').innerHTML =
+        `<p class="cap-line" style="margin:0 4px 12px">受付をした人の名前と、取消の詳細を入力してください。両方の入力が必要です。</p>
+         <input class="field" id="rName" placeholder="受付者名" value="${esc(rdata.name)}" style="margin-bottom:12px">
+         <input class="field" id="rDetail" placeholder="詳細" value="${esc(rdata.detail)}">
+         <button class="btn btn-filled block" id="rNext" style="margin-top:16px">次へ</button>`;
+    } else {
+      $('#sheetBody').innerHTML =
+        `<p class="cap-line" style="margin:0 4px 12px">${esc(itemsText(o))} をどうしますか。</p>
+         <div class="list">
+           <button class="row pick" data-disp="stock"><span class="n">余剰在庫に戻す</span><span class="sub2">他の注文に充当</span></button>
+           <button class="row pick" data-disp="waste"><span class="n">廃棄する</span><span class="sub2">在庫から減らす</span></button>
+         </div>`;
+    }
     return;
   }
   if (sheetMode === 'ticket') {
@@ -591,6 +625,7 @@ async function flush() {
       });
     }
     if (ch) store(K.orders, orders);
+    if (j.stock) stock = j.stock;
     if (!queue.length && j.nextTicket) { ticket = j.nextTicket; store(K.ticket, ticket); }
     online = true;
     render();
@@ -610,6 +645,7 @@ async function fetchConfig() {
     if (!j.ok) throw new Error(j.error);
     applyReset(j.config.resetAt || 0);
     cfg = j.config; store(K.cfg, cfg);
+    if (j.stock) stock = j.stock;
     online = true; render();
   } catch (e) {
     if (!queue.length) online = false;
@@ -624,6 +660,7 @@ async function fetchOrders() {
     const r = await fetch(GAS_URL + '?action=orders&t=' + Date.now());
     const j = await r.json();
     if (!j.ok) throw new Error(j.error);
+    if (j.stock) stock = j.stock;
     const pending = new Set(queue.map(e => e.id));
     const srv = {}, tkt = {};
     j.orders.forEach(o => { srv[o[0]] = o[4]; tkt[o[0]] = o[1]; });
@@ -696,12 +733,31 @@ $('#waitlist').addEventListener('pointerdown', e => {
 ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev =>
   document.addEventListener(ev, () => { if (hold) holdCancel(); }));
 $('#sheetBody').addEventListener('click', e => {
-  const rc = e.target.closest('[data-reason]');
-  if (rc) { $('#reasonText').value = rc.dataset.reason; return; }
-  if (e.target.closest('#voidGo')) {
-    const reason = ($('#reasonText').value || '').trim();
-    if (!reason) { $('#reasonText').focus(); toast('取消理由を入力してください'); return; }
-    const id = targetId; openSheet(false); voidOrder(id, reason);
+  const o = orders.find(x => x.id === targetId);
+  const cooked = o && o.status === 'ready';
+  const cat = e.target.closest('[data-cat]');
+  if (cat) {
+    rdata.cat = cat.dataset.cat;
+    if (rdata.cat === 'その他') { rstep = 'other'; renderSheet(); return; }
+    const disp = !cooked ? 'none' : (rdata.cat === '商品不良' ? 'waste' : 'stock');
+    const id = targetId; openSheet(false); voidOrder(id, rdata.cat, disp);
+    return;
+  }
+  if (e.target.closest('#rNext')) {
+    rdata.name = ($('#rName').value || '').trim();
+    rdata.detail = ($('#rDetail').value || '').trim();
+    if (!rdata.name || !rdata.detail) { toast('名前と詳細の両方を入力してください'); return; }
+    if (!cooked) {                                    // 調理前は在庫に影響しない
+      const id = targetId; const r = 'その他／' + rdata.name + '／' + rdata.detail;
+      openSheet(false); voidOrder(id, r, 'none'); return;
+    }
+    rstep = 'disp'; renderSheet(); return;
+  }
+  const dp = e.target.closest('[data-disp]');
+  if (dp) {
+    const id = targetId;
+    const r = 'その他／' + rdata.name + '／' + rdata.detail;
+    openSheet(false); voidOrder(id, r, dp.dataset.disp);
     return;
   }
   const t = e.target.closest('[data-t]'); if (t) { setTicket(+t.dataset.t); return; }
