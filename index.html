@@ -52,6 +52,10 @@ body {
 .status.ok i { background: var(--green); }
 .status.warn i { background: var(--orange); }
 .status.err i { background: var(--red); }
+.bell-btn { width: 40px; height: 40px; display: grid; place-items: center; border: 0; background: none;
+  color: var(--label-3); cursor: pointer; margin-right: -8px; }
+.bell-btn[aria-pressed="true"] { color: var(--accent); }
+.bell-btn:active { opacity: 0.4; }
 .seg { display: flex; padding: 2px; background: var(--fill); border-radius: 9px; margin-top: var(--sp-3); }
 .seg button { flex: 1; min-height: 34px; border: 0; border-radius: 7px; background: none; font: inherit;
   font-size: 13px; font-weight: 590; color: var(--label); cursor: pointer; transition: background var(--dur) var(--ease); }
@@ -175,7 +179,12 @@ body {
           <div class="date" id="date"></div>
           <h1 id="head">整理券 No.1</h1>
         </div>
-        <div class="status" id="status"><i></i><span>確認中</span></div>
+        <div style="display:flex;align-items:center;gap:2px">
+          <div class="status" id="status"><i></i><span>確認中</span></div>
+          <button class="bell-btn" id="soundBtn" aria-pressed="false" aria-label="準備完了の通知音">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10a5 5 0 0 1 10 0v5l1.5 2.5h-13L7 15z"/><path d="M10.2 20.5a2 2 0 0 0 3.6 0"/></svg>
+          </button>
+        </div>
       </div>
       <div class="seg" id="paneSeg">
         <button data-pane="sale" aria-selected="true">注文入力</button>
@@ -222,7 +231,8 @@ body {
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbxPALiGXxYTYIFeYSu-rxp0tUIAB3Cdlr367EIkegSQUBscC3j20GNnxwiaiwWgaEgb/exec';
 // ================================================================
 
-const K = { cfg: 'churro_cfg_v2', orders: 'churro_orders_v2', queue: 'churro_queue_v2', ticket: 'churro_ticket_v2' };
+const K = { cfg: 'churro_cfg_v2', orders: 'churro_orders_v2', queue: 'churro_queue_v2',
+            ticket: 'churro_ticket_v2', sound: 'churro_reg_sound' };
 const $ = s => document.querySelector(s);
 const load = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } };
 const store = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
@@ -241,8 +251,10 @@ let ticket = load(K.ticket, 1);
 let cart = {}, cartLog = [];
 let pane = 'sale';
 let online = null;
+let sound = localStorage.getItem(K.sound) === '1';
 
 const ticketMax = () => (cfg && cfg.ticketMax) || 30;
+const wrap = n => (n - 1) % ticketMax() + 1;
 const waiting = () => orders.filter(o => o.status === 'waiting' || o.status === 'ready').sort((a, b) => a.ts - b.ts);
 const cartQty = () => Object.values(cart).reduce((a, n) => a + n, 0);
 const itemsText = o => o.items.map(i => i.name + '×' + i.qty).join(' / ');
@@ -306,7 +318,11 @@ function voidOrder(id) {
   render();
   toast('No.' + o.ticket + ' を取り消しました');
 }
-function setTicket(n) { ticket = n; store(K.ticket, ticket); render(); openSheet(false); }
+function setTicket(n) {
+  ticket = n; store(K.ticket, ticket);
+  enqueue({ type: 'setSeq', id: 'seq', value: n });   // 他の端末にも反映
+  render(); openSheet(false);
+}
 
 // ---------- 表示 ----------
 function render() {
@@ -388,7 +404,7 @@ function renderSheet() {
     $('#sheetTitle').textContent = '整理券番号を指定';
     $('#sheetBody').innerHTML = '<div class="tgrid">' +
       Array.from({ length: n }, (_, i) => i + 1).map(v => `<button data-t="${v}" aria-selected="${v === ticket}">${v}</button>`).join('') +
-      '</div><p class="cap-line">次に発行する番号です。1〜' + n + 'を順に使い、' + n + 'の次は1に戻ります。</p>';
+      '</div><p class="cap-line">次に発行する番号です。全端末で共有され、1〜' + n + 'を順に使って' + n + 'の次は1に戻ります。</p>';
   } else {
     const st = { waiting: '調理中', ready: '準備完了', done: 'お渡し済', void: '取消' };
     const today = orders.filter(o => dayKey(o.ts) === dayKey(Date.now())).slice().reverse();
@@ -420,6 +436,32 @@ function renderStatus() {
   t.textContent = '確認中';
 }
 
+// ---------- 通知 ----------
+let ac = null;
+function tone(freq, at, dur, gain) {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = 'triangle'; o.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, ac.currentTime + at);
+  g.gain.exponentialRampToValueAtTime(gain, ac.currentTime + at + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + at + dur);
+  o.connect(g); g.connect(ac.destination);
+  o.start(ac.currentTime + at); o.stop(ac.currentTime + at + dur + 0.02);
+}
+function chime() {
+  if (!sound) return;
+  try {
+    ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+    if (ac.state === 'suspended') ac.resume();
+    [0, 0.42].forEach(t => { tone(660, t, 0.18, 0.5); tone(990, t + 0.16, 0.3, 0.5); });
+  } catch (e) {}
+}
+function alertReady(n) {
+  chime();
+  if (navigator.vibrate) navigator.vibrate([140, 90, 140, 90, 260]);
+  toast(n > 1 ? n + '件が準備完了です' : '準備完了のオーダーがあります');
+  if (pane === 'sale') { /* 待ち画面に切り替えはしない（入力中のため） */ }
+}
+
 let toastTimer = null, toastFn = null;
 function toast(msg, act, fn) {
   $('#toastMsg').textContent = msg;
@@ -449,7 +491,17 @@ async function flush() {
     const sent = new Set(batch.map(e => e.eid));
     queue = queue.filter(e => !sent.has(e.eid));
     store(K.queue, queue);
+    if (j.assigned) {                                   // サーバが確定させた整理券番号を反映
+      let ch = false;
+      Object.keys(j.assigned).forEach(id => {
+        const o = orders.find(x => x.id === id);
+        if (o && o.ticket !== j.assigned[id]) { o.ticket = j.assigned[id]; ch = true; }
+      });
+      if (ch) store(K.orders, orders);
+    }
+    if (!queue.length && j.nextTicket) { ticket = j.nextTicket; store(K.ticket, ticket); }
     online = true;
+    render();
   } catch (e) {
     online = false;
   } finally {
@@ -481,14 +533,21 @@ async function fetchOrders() {
     const j = await r.json();
     if (!j.ok) throw new Error(j.error);
     const pending = new Set(queue.map(e => e.id));
-    const srv = {}; j.orders.forEach(o => srv[o[0]] = o[4]);
-    let changed = false;
+    const srv = {}, tkt = {};
+    j.orders.forEach(o => { srv[o[0]] = o[4]; tkt[o[0]] = o[1]; });
+    let changed = false, becameReady = 0;
     orders.forEach(o => {
       if (pending.has(o.id)) return;                 // 未送信の操作がある注文は触らない
+      if (tkt[o.id] && tkt[o.id] !== o.ticket) { o.ticket = tkt[o.id]; changed = true; }
       const st = srv[o.id];
-      if (st && st !== o.status && (o.status === 'waiting' || o.status === 'ready')) { o.status = st; changed = true; }
+      if (st && st !== o.status && (o.status === 'waiting' || o.status === 'ready')) {
+        if (st === 'ready' && o.status === 'waiting') becameReady++;
+        o.status = st; changed = true;
+      }
     });
+    if (!queue.length && j.nextTicket && j.nextTicket !== ticket) { ticket = j.nextTicket; store(K.ticket, ticket); changed = true; }
     if (changed) { store(K.orders, orders); render(); }
+    if (becameReady) alertReady(becameReady);
     online = true;
   } catch (e) {
     if (!queue.length) online = false;
@@ -526,6 +585,11 @@ $('#sheetBody').addEventListener('click', e => {
   const t = e.target.closest('[data-t]'); if (t) { setTicket(+t.dataset.t); return; }
   const r = e.target.closest('[data-reopen]'); if (r) { reopen(r.dataset.reopen); return; }
 });
+$('#soundBtn').addEventListener('click', () => {
+  sound = !sound; localStorage.setItem(K.sound, sound ? '1' : '0');
+  $('#soundBtn').setAttribute('aria-pressed', sound);
+  if (sound) chime();   // iOSのため、ユーザー操作の中で一度鳴らして音声を有効化する
+});
 $('#closeSheet').addEventListener('click', () => openSheet(false));
 $('#scrim').addEventListener('click', () => openSheet(false));
 $('#toastAct').addEventListener('click', () => { const fn = toastFn; $('#toast').classList.remove('show'); if (fn) fn(); });
@@ -550,6 +614,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) { fe
 
 orders = orders.filter(o => o.ts > Date.now() - 3 * 864e5); store(K.orders, orders);
 
+$('#soundBtn').setAttribute('aria-pressed', sound);
 render(); renderStatus();
 fetchConfig(); fetchOrders(); flush();
 setInterval(flush, 5000);
