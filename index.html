@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="販売カウンター">
+<title>チュロス販売カウンター</title>
+<style>
+:root {
+  --bg: #F2F2F7; --surface: #FFFFFF; --surface-2: #F2F2F7;
+  --separator: rgba(60,60,67,0.20); --fill: rgba(120,120,128,0.12);
+  --label: #000000; --label-2: rgba(60,60,67,0.60); --label-3: rgba(60,60,67,0.30);
+  --accent: #007AFF; --red: #FF3B30; --green: #34C759; --orange: #FF9500;
+  --r-sm: 8px; --r-md: 10px; --r-lg: 14px; --r-xl: 22px;
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-6: 24px; --sp-8: 32px;
+  --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.08);
+  --ease: cubic-bezier(0.32, 0.72, 0, 1); --dur: 280ms;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
+          "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #000000; --surface: #1C1C1E; --surface-2: #2C2C2E;
+    --separator: rgba(84,84,88,0.65); --fill: rgba(120,120,128,0.24);
+    --label: #FFFFFF; --label-2: rgba(235,235,245,0.60); --label-3: rgba(235,235,245,0.30);
+    --accent: #0A84FF; --red: #FF453A; --green: #30D158; --orange: #FF9F0A;
+    --shadow: 0 1px 3px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.5);
+  }
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { overscroll-behavior: none; }
+body {
+  margin: 0; font-family: var(--font); font-size: 17px; line-height: 1.47;
+  color: var(--label); background: var(--bg); -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none; user-select: none; touch-action: manipulation;
+  padding-bottom: calc(96px + env(safe-area-inset-bottom));
+}
+.ic { width: 20px; height: 20px; flex: none; display: block; }
+
+/* ナビ */
+.nav { position: sticky; top: 0; z-index: 10; padding-top: env(safe-area-inset-top);
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px); }
+.nav-in { display: flex; align-items: flex-end; justify-content: space-between;
+  padding: var(--sp-3) var(--sp-4) var(--sp-3); }
+.nav h1 { margin: 0; font-size: 34px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
+.nav .date { font-size: 13px; color: var(--label-2); margin-bottom: 2px; }
+.status { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 var(--sp-3);
+  border-radius: 16px; background: var(--fill); font-size: 13px; font-weight: 590; color: var(--label-2); }
+.status i { width: 8px; height: 8px; border-radius: 50%; background: var(--label-3); }
+.status.ok i { background: var(--green); }
+.status.warn i { background: var(--orange); }
+.status.err i { background: var(--red); }
+
+/* 商品タイル */
+.grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--sp-3); padding: var(--sp-2) var(--sp-4) 0; }
+@media (min-width: 640px) { .grid { grid-template-columns: repeat(3, 1fr); } }
+.tile { position: relative; min-height: 136px; border-radius: var(--r-lg); background: var(--surface);
+  padding: var(--sp-4) var(--sp-4) var(--sp-3) 20px; display: flex; flex-direction: column;
+  justify-content: space-between; cursor: pointer; overflow: hidden;
+  transition: transform 200ms var(--ease), background 200ms var(--ease); }
+.tile:active { transform: scale(0.96); }
+.tile.flash { background: color-mix(in srgb, var(--tc) 18%, var(--surface)); }
+.tile .bar { position: absolute; left: 0; top: var(--sp-4); bottom: var(--sp-4); width: 4px;
+  border-radius: 0 2px 2px 0; background: var(--tc); }
+.tile-name { font-size: 17px; font-weight: 590; padding-right: 36px; line-height: 1.3; }
+.tile-price { font-size: 15px; color: var(--label-2); }
+.tile-count { font-size: 40px; font-weight: 700; letter-spacing: -0.02em; line-height: 1;
+  align-self: flex-end; font-variant-numeric: tabular-nums; }
+.tile-count small { font-size: 15px; font-weight: 590; color: var(--label-2); margin-left: 2px; }
+.minus { position: absolute; top: 2px; right: 2px; width: 44px; height: 44px; border: 0; background: none;
+  display: grid; place-items: center; cursor: pointer; color: var(--label-2); }
+.minus span { width: 28px; height: 28px; border-radius: 50%; background: var(--fill);
+  display: grid; place-items: center; transition: opacity var(--dur) var(--ease); }
+.minus:active span { opacity: 0.4; }
+.minus .ic { width: 16px; height: 16px; }
+.minus:disabled { visibility: hidden; }
+
+.empty { margin: 64px var(--sp-6); text-align: center; color: var(--label-2); }
+.empty .ic { width: 40px; height: 40px; margin: 0 auto var(--sp-3); color: var(--label-3); }
+
+/* 下部バー */
+.bottom { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  padding: var(--sp-3) var(--sp-4) calc(var(--sp-3) + env(safe-area-inset-bottom));
+  display: flex; align-items: center; gap: var(--sp-2);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px);
+  box-shadow: inset 0 0.5px 0 var(--separator); }
+.sum { flex: 1; min-width: 0; }
+.sum .cap { font-size: 13px; color: var(--label-2); }
+.sum .val { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sum .val span { font-size: 15px; font-weight: 590; color: var(--label-2); margin-left: 6px; }
+
+.btn { min-height: 44px; padding: 0 var(--sp-4); border: 0; border-radius: var(--r-md);
+  font: inherit; font-weight: 590; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  transition: transform var(--dur) var(--ease), opacity var(--dur) var(--ease); }
+.btn:active { transform: scale(0.96); opacity: 0.85; }
+.btn-tinted { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.btn-gray { background: var(--fill); color: var(--label); }
+.btn-plain { background: none; color: var(--accent); padding: 0 var(--sp-2); }
+.btn-plain.red { color: var(--red); }
+
+/* トースト */
+.toast { position: fixed; left: var(--sp-4); right: var(--sp-4); z-index: 30;
+  bottom: calc(84px + env(safe-area-inset-bottom));
+  display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4);
+  min-height: 52px; border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--shadow);
+  font-size: 15px; opacity: 0; transform: translateY(8px); pointer-events: none;
+  transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease); }
+.toast.show { opacity: 1; transform: none; pointer-events: auto; }
+.toast .msg { flex: 1; }
+
+/* シート */
+.scrim { position: fixed; inset: 0; z-index: 49; background: rgba(0,0,0,0.4); opacity: 0; pointer-events: none;
+  transition: opacity var(--dur) var(--ease); }
+.scrim.open { opacity: 1; pointer-events: auto; }
+.sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; max-height: 80vh; display: flex; flex-direction: column;
+  background: var(--bg); border-radius: var(--r-xl) var(--r-xl) 0 0; box-shadow: var(--shadow);
+  padding: var(--sp-3) 0 env(safe-area-inset-bottom); transform: translateY(100%); visibility: hidden;
+  transition: transform var(--dur) var(--ease), visibility 0s linear var(--dur); }
+.sheet.open { transform: none; visibility: visible; transition: transform var(--dur) var(--ease); }
+.sheet::before { content: ""; display: block; width: 36px; height: 5px; margin: 0 auto var(--sp-2);
+  border-radius: 3px; background: var(--label-3); flex: none; }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 0 var(--sp-2) var(--sp-2) var(--sp-4); flex: none; }
+.sheet-head h2 { margin: 0; font-size: 22px; font-weight: 700; }
+.sheet-body { overflow-y: auto; padding: 0 var(--sp-4) var(--sp-6); -webkit-overflow-scrolling: touch; }
+.list { background: var(--surface); border-radius: var(--r-lg); overflow: hidden; }
+.row { display: flex; align-items: center; gap: var(--sp-3); min-height: 52px; padding: var(--sp-1) var(--sp-2) var(--sp-1) var(--sp-4); }
+.row + .row { box-shadow: inset 0 0.5px 0 var(--separator); }
+.row .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.row .t { font-size: 15px; color: var(--label-2); font-variant-numeric: tabular-nums; width: 64px; flex: none; }
+.row .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .p { font-size: 15px; color: var(--label-2); font-variant-numeric: tabular-nums; }
+.row.void .n, .row.void .p, .row.void .t { text-decoration: line-through; color: var(--label-3); }
+.cap-line { font-size: 13px; color: var(--label-2); margin: var(--sp-3) var(--sp-3) 0; }
+
+/* ログイン */
+.login { max-width: 400px; margin: 18vh auto 0; padding: 0 var(--sp-4); }
+.login h1 { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 var(--sp-2); }
+.login p { color: var(--label-2); font-size: 15px; margin: 0 0 var(--sp-6); }
+.login .field { width: 100%; min-height: 48px; padding: var(--sp-2) var(--sp-4); border: 0;
+  border-radius: var(--r-md); background: var(--surface); font: inherit; color: var(--label); margin-bottom: var(--sp-3); }
+.login .field:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
+.err-t { color: var(--red); font-size: 13px; min-height: 20px; margin: 0 var(--sp-1) var(--sp-3); }
+.btn-filled { background: var(--accent); color: #fff; }
+.btn.block { width: 100%; justify-content: center; }
+.lock-btn { width: 44px; height: 44px; display: grid; place-items: center; border: 0; background: none;
+  color: var(--label-2); cursor: pointer; margin-left: -6px; }
+.lock-btn:active { opacity: 0.4; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<section class="login" id="loginView" hidden>
+  <h1>販売カウント</h1>
+  <p>スタッフ用パスワードを入力してください。一度入れると、この端末では次回から入力不要です。</p>
+  <input class="field" id="pass" type="password" placeholder="パスワード" autocomplete="current-password">
+  <div class="err-t" id="loginErr"></div>
+  <button class="btn btn-filled block" id="loginBtn">開始</button>
+</section>
+
+<div id="appView" hidden>
+<header class="nav">
+  <div class="nav-in">
+    <div>
+      <div class="date" id="date"></div>
+      <h1>販売カウント</h1>
+    </div>
+    <div style="display:flex;align-items:center;gap:2px">
+      <div class="status" id="status"><i></i><span>接続確認中</span></div>
+      <button class="lock-btn" id="lockBtn" aria-label="ロック">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="9.5" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="grid" id="grid"></div>
+  <div class="empty" id="empty" hidden></div>
+</main>
+
+<div class="bottom">
+  <div class="sum">
+    <div class="cap">本日の販売</div>
+    <div class="val" id="sumQty">0個</div>
+  </div>
+  <button class="btn btn-gray" id="undoBtn" aria-label="直前の1個を取り消し">
+    <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M8 8h7a5 5 0 0 1 0 10H9"/><polyline points="11,5 8,8 11,11"/></svg>
+    取り消し
+  </button>
+  <button class="btn btn-tinted" id="histBtn" aria-label="履歴">
+    <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><polyline points="12,7 12,12 16,14"/></svg>
+    履歴
+  </button>
+</div>
+
+</div>
+
+<div class="toast" id="toast"><span class="msg" id="toastMsg"></span><button class="btn btn-plain" id="toastAct"></button></div>
+
+<div class="scrim" id="scrim"></div>
+<section class="sheet" id="sheet" aria-hidden="true">
+  <div class="sheet-head">
+    <h2>本日の履歴</h2>
+    <button class="btn btn-plain" id="closeSheet">完了</button>
+  </div>
+  <div class="sheet-body" id="histBody"></div>
+</section>
+
+<script>
+// ===== ここにGASのWebアプリURL（/exec で終わるもの）を貼る =====
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbxPALiGXxYTYIFeYSu-rxp0tUIAB3Cdlr367EIkegSQUBscC3j20GNnxwiaiwWgaEgb/exec';
+// ================================================================
+
+const K = { cfg: 'churro_cfg_v1', sales: 'churro_sales_v1', queue: 'churro_queue_v1', key: 'churro_staff_key' };
+const $ = s => document.querySelector(s);
+const load = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } };
+const store = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const yen = n => '¥' + Math.round(n).toLocaleString('ja-JP');
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const pad = n => String(n).padStart(2, '0');
+const dayKey = ts => { const d = new Date(ts); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); };
+const hms = ts => { const d = new Date(ts); return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()); };
+
+let cfg = load(K.cfg, null);
+let sales = load(K.sales, []);   // {id, ts, productId, name, price, void}
+let queue = load(K.queue, []);   // 未送信イベント
+let online = null;
+let key = localStorage.getItem(K.key) || '';
+
+const todaySales = () => { const t = dayKey(Date.now()); return sales.filter(s => dayKey(s.ts) === t); };
+
+// ---------- 操作 ----------
+function enqueue(ev) { ev.eid = uid(); queue.push(ev); store(K.queue, queue); scheduleFlush(); }
+
+function sell(p) {
+  const s = { id: uid(), ts: Date.now(), productId: p.id, name: p.name, price: Number(p.price) || 0, void: false };
+  sales.push(s); store(K.sales, sales);
+  enqueue({ type: 'sale', id: s.id, ts: s.ts, productId: s.productId, name: s.name, price: s.price });
+  if (navigator.vibrate) navigator.vibrate(12);
+  render(); flash(p.id);
+  toast(p.name + ' を1個追加', '取り消す', () => setVoid(s.id, true, true));
+}
+
+function setVoid(id, v, notify) {
+  const s = sales.find(x => x.id === id);
+  if (!s || s.void === v) return;
+  s.void = v; store(K.sales, sales);
+  enqueue({ type: v ? 'void' : 'restore', id });
+  render(); renderHistory();
+  if (notify) toast(s.name + (v ? ' を1個取り消しました' : ' を元に戻しました'), v ? '元に戻す' : '', v ? () => setVoid(id, false, true) : null);
+}
+
+function undoLast() {
+  const list = todaySales().filter(s => !s.void);
+  const s = list[list.length - 1];
+  if (!s) { toast('取り消せる販売がありません'); return; }
+  setVoid(s.id, true, true);
+}
+
+function minusProduct(pid) {
+  const list = todaySales().filter(s => !s.void && s.productId === pid);
+  const s = list[list.length - 1];
+  if (s) setVoid(s.id, true, true);
+}
+
+// ---------- 表示 ----------
+function render() {
+  const d = new Date();
+  $('#date').textContent = (d.getMonth() + 1) + '月' + d.getDate() + '日（' + '日月火水木金土'[d.getDay()] + '）';
+
+  const today = todaySales().filter(s => !s.void);
+  const counts = {};
+  today.forEach(s => counts[s.productId] = (counts[s.productId] || 0) + 1);
+  $('#sumQty').textContent = today.length + '個';
+
+  const grid = $('#grid'), empty = $('#empty');
+  const products = (cfg && cfg.products || []).filter(p => p.active !== false);
+  if (!products.length) {
+    grid.innerHTML = ''; empty.hidden = false;
+    empty.innerHTML = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><line x1="12" y1="11" x2="12" y2="16.5"/><circle cx="12" cy="7.8" r="0.9" fill="currentColor" stroke="none"/></svg>'
+      + (GAS_URL ? '商品を読み込み中です。表示されない場合は管理者アプリで商品を登録してください。' : 'GAS_URL が未設定です。register.html 内の GAS_URL を設定してください。');
+    return;
+  }
+  empty.hidden = true;
+  grid.innerHTML = products.map(p => {
+    const c = counts[p.id] || 0;
+    return `<div class="tile" role="button" tabindex="0" data-id="${esc(p.id)}" style="--tc:${esc(p.color || '#FF9500')}">
+      <div class="bar"></div>
+      <div><div class="tile-name">${esc(p.name)}</div><div class="tile-price">${yen(p.price)}</div></div>
+      <div class="tile-count">${c}<small>個</small></div>
+      <button class="minus" data-minus="${esc(p.id)}" aria-label="${esc(p.name)}を1個減らす" ${c ? '' : 'disabled'}>
+        <span><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="12" x2="18" y2="12"/></svg></span>
+      </button>
+    </div>`;
+  }).join('');
+}
+
+function flash(pid) {
+  const el = document.querySelector(`.tile[data-id="${CSS.escape(pid)}"]`);
+  if (!el) return;
+  el.classList.add('flash');
+  setTimeout(() => el.classList.remove('flash'), 220);
+}
+
+function renderHistory() {
+  if (!$('#sheet').classList.contains('open')) return;
+  const list = todaySales().slice().reverse();
+  const colors = {};
+  (cfg && cfg.products || []).forEach(p => colors[p.id] = p.color);
+  const voids = list.filter(s => s.void).length;
+  $('#histBody').innerHTML = list.length
+    ? `<div class="list">${list.map(s => `
+        <div class="row ${s.void ? 'void' : ''}">
+          <span class="dot" style="background:${esc(colors[s.productId] || 'var(--label-3)')}"></span>
+          <span class="t">${hms(s.ts)}</span>
+          <span class="n">${esc(s.name)}</span>
+          <span class="p">${yen(s.price)}</span>
+          <button class="btn btn-plain ${s.void ? '' : 'red'}" data-toggle="${esc(s.id)}">${s.void ? '復元' : '取消'}</button>
+        </div>`).join('')}</div>
+       <p class="cap-line">${list.length - voids}件有効${voids ? ' ・ 取消 ' + voids + '件' : ''}</p>`
+    : '<p class="cap-line" style="text-align:center;margin-top:32px">本日の販売はまだありません</p>';
+}
+
+function renderStatus() {
+  const el = $('#status'), t = el.querySelector('span');
+  el.className = 'status';
+  if (!GAS_URL) { el.classList.add('err'); t.textContent = 'URL未設定'; return; }
+  if (queue.length) {
+    el.classList.add('warn');
+    t.textContent = (online === false ? 'オフライン・' : '送信中・') + queue.length + '件';
+    return;
+  }
+  if (online === false) { el.classList.add('err'); t.textContent = '接続エラー'; return; }
+  if (online === true) { el.classList.add('ok'); t.textContent = '同期済み'; return; }
+  t.textContent = '接続確認中';
+}
+
+let toastTimer = null, toastFn = null;
+function toast(msg, act, fn) {
+  $('#toastMsg').textContent = msg;
+  const b = $('#toastAct');
+  b.textContent = act || ''; b.hidden = !act; toastFn = fn || null;
+  $('#toast').classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => $('#toast').classList.remove('show'), 2600);
+}
+
+function openSheet(v) {
+  $('#sheet').classList.toggle('open', v); $('#scrim').classList.toggle('open', v);
+  $('#sheet').setAttribute('aria-hidden', !v);
+  if (v) renderHistory();
+}
+
+// ---------- 通信 ----------
+let flushTimer = null, syncing = false;
+function scheduleFlush() { clearTimeout(flushTimer); flushTimer = setTimeout(flush, 400); renderStatus(); }
+
+async function flush() {
+  renderStatus();
+  if (!GAS_URL || syncing || !queue.length) return;
+  syncing = true;
+  const batch = queue.slice(0, 100);
+  try {
+    const r = await fetch(GAS_URL, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'sync', key, events: batch })
+    });
+    const j = await r.json();
+    if (!j.ok) { if (j.error === 'auth') { lock('パスワードが変更されました。入力し直してください。'); return; } throw new Error(j.error || 'error'); }
+    const sent = new Set(batch.map(e => e.eid));
+    queue = queue.filter(e => !sent.has(e.eid));
+    store(K.queue, queue);
+    online = true;
+  } catch (e) {
+    online = false;
+  } finally {
+    syncing = false; renderStatus();
+    if (online && queue.length) scheduleFlush();
+  }
+}
+
+async function fetchConfig() {
+  if (!GAS_URL) { renderStatus(); return; }
+  try {
+    const r = await fetch(GAS_URL + '?action=config&key=' + encodeURIComponent(key) + '&t=' + Date.now());
+    const j = await r.json();
+    if (!j.ok) { if (j.error === 'auth') { lock('パスワードが変更されました。入力し直してください。'); return; } throw new Error(j.error); }
+    applyReset(j.config.resetAt || 0);
+    cfg = j.config; store(K.cfg, cfg);
+    online = true; render();
+  } catch (e) {
+    if (!queue.length) online = false;
+  }
+  renderStatus();
+}
+
+// 管理者が全データ削除したら端末側のテスト販売分も消す
+function applyReset(resetAt) {
+  if (!resetAt || (cfg && cfg.resetAt === resetAt)) return;
+  sales = sales.filter(s => s.ts >= resetAt);
+  const ids = new Set(sales.map(s => s.id));
+  queue = queue.filter(e => ids.has(e.id));
+  store(K.sales, sales); store(K.queue, queue);
+}
+
+// ---------- 認証 ----------
+async function login() {
+  const v = $('#pass').value.trim();
+  if (!v) return;
+  if (!GAS_URL) { $('#loginErr').textContent = 'register.html 内の GAS_URL を設定してください'; return; }
+  $('#loginErr').textContent = '確認中…';
+  try {
+    const r = await fetch(GAS_URL + '?action=config&key=' + encodeURIComponent(v) + '&t=' + Date.now());
+    const j = await r.json();
+    if (!j.ok) { $('#loginErr').textContent = j.error === 'auth' ? 'パスワードが違います' : String(j.error); return; }
+    key = v; localStorage.setItem(K.key, key);
+    applyReset(j.config.resetAt || 0);
+    cfg = j.config; store(K.cfg, cfg); online = true;
+    $('#pass').value = ''; $('#loginErr').textContent = '';
+    unlock();
+  } catch (e) {
+    $('#loginErr').textContent = '接続できません。通信環境を確認してください。';
+  }
+}
+function unlock() {
+  $('#loginView').hidden = true; $('#appView').hidden = false;
+  render(); renderStatus(); flush();
+}
+function lock(msg) {
+  key = ''; localStorage.removeItem(K.key);
+  $('#appView').hidden = true; $('#loginView').hidden = false;
+  $('#loginErr').textContent = msg || '';
+  openSheet(false);
+}
+
+// ---------- イベント ----------
+$('#loginBtn').addEventListener('click', login);
+$('#pass').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+$('#lockBtn').addEventListener('click', () => lock(''));
+$('#grid').addEventListener('click', e => {
+  const m = e.target.closest('[data-minus]');
+  if (m) { e.stopPropagation(); minusProduct(m.dataset.minus); return; }
+  const t = e.target.closest('.tile');
+  if (!t) return;
+  const p = (cfg.products || []).find(x => x.id === t.dataset.id);
+  if (p) sell(p);
+});
+$('#undoBtn').addEventListener('click', undoLast);
+$('#histBtn').addEventListener('click', () => openSheet(true));
+$('#closeSheet').addEventListener('click', () => openSheet(false));
+$('#scrim').addEventListener('click', () => openSheet(false));
+$('#histBody').addEventListener('click', e => {
+  const b = e.target.closest('[data-toggle]');
+  if (!b) return;
+  const s = sales.find(x => x.id === b.dataset.toggle);
+  if (s) setVoid(s.id, !s.void, false);
+});
+$('#toastAct').addEventListener('click', () => {
+  const fn = toastFn; $('#toast').classList.remove('show'); if (fn) fn();
+});
+window.addEventListener('online', flush);
+document.addEventListener('visibilitychange', () => { if (!document.hidden && key) { fetchConfig(); flush(); render(); } });
+
+// 古い端末内データ（7日より前）は整理
+sales = sales.filter(s => s.ts > Date.now() - 7 * 864e5); store(K.sales, sales);
+
+if (key) { unlock(); fetchConfig(); } else { $('#loginView').hidden = false; }
+setInterval(() => { if (key) flush(); }, 5000);
+setInterval(() => { if (key) fetchConfig(); }, 60000);
+setInterval(() => { if (key) render(); }, 60000);   // 日付の切り替わり対応
+</script>
+</body>
+</html>
