@@ -29,11 +29,13 @@
   }
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+button, .tile, .row, .seg button, .tgrid button, .minus { touch-action: manipulation; }
 html, body { overscroll-behavior: none; }
 body {
   margin: 0; font-family: var(--font); font-size: 17px; line-height: 1.47;
   color: var(--label); background: var(--bg); -webkit-font-smoothing: antialiased;
-  -webkit-user-select: none; user-select: none;
+  -webkit-user-select: none; user-select: none; touch-action: manipulation;
+  -webkit-text-size-adjust: 100%; text-size-adjust: 100%;
   padding-bottom: calc(96px + env(safe-area-inset-bottom));
 }
 .ic { width: 20px; height: 20px; flex: none; display: block; }
@@ -291,6 +293,12 @@ const cartAmt = () => Object.keys(cart).reduce((a, pid) => a + priceOf(pid) * ca
 const pcsOf = pid => { const p = (cfg && cfg.products || []).find(x => x.id === pid); return p ? Number(p.pcs) || 0 : 0; };
 const cartPcs = () => Object.keys(cart).reduce((a, pid) => a + pcsOf(pid) * cart[pid], 0);
 const orderPcs = o => o.items.reduce((a, i) => a + pcsOf(i.productId) * i.qty, 0);
+const flavorOf = pid => { const p = (cfg && cfg.products || []).find(x => x.id === pid); return p ? (p.flavor || p.name) : ''; };
+function surplusOf(o) {                                // 味ごとの本数にまとめる
+  const m = {};
+  o.items.forEach(i => { const f = flavorOf(i.productId); if (f) m[f] = (m[f] || 0) + pcsOf(i.productId) * i.qty; });
+  return Object.keys(m).map(f => ({ flavor: f, pieces: m[f] }));
+}
 const itemsText = o => o.items.map(i => i.name + '×' + i.qty).join(' / ');
 
 // ---------- 注文操作 ----------
@@ -353,7 +361,7 @@ function voidOrder(id, reason, disposition) {
   o.status = 'void'; store(K.orders, orders);
   enqueue({
     type: 'void', id, reason: reason || '', disposition: disp,
-    surplus: disp === 'stock' ? o.items.map(i => ({ productId: i.productId, qty: i.qty })) : null
+    surplus: disp === 'stock' ? surplusOf(o) : null
   });
   render();
   toast('No.' + o.ticket + ' を取消（' + (disp === 'stock' ? '余剰在庫へ' : disp === 'waste' ? '廃棄' : '材料は未使用') + '）');
@@ -790,6 +798,10 @@ document.addEventListener('touchend', e => {
   if (Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx) * 0.8) return;
   setPane(dx < 0 ? 'wait' : 'sale');
 }, { passive: true });
+
+document.addEventListener('dblclick', e => e.preventDefault());
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('gesturechange', e => e.preventDefault());
 
 window.addEventListener('online', flush);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { fetchConfig(); fetchOrders(); flush(); render(); } });
