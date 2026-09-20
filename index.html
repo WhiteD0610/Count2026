@@ -59,9 +59,12 @@ body {
 .bell-btn[aria-pressed="true"] { color: var(--accent); }
 .bell-btn:active { opacity: 0.4; }
 .seg { display: flex; padding: 2px; background: var(--fill); border-radius: 9px; margin-top: var(--sp-3); }
-.seg button { flex: 1; min-height: 34px; border: 0; border-radius: 7px; background: none; font: inherit;
+.seg button { position: relative; flex: 1; min-height: 34px; border: 0; border-radius: 7px; background: none; font: inherit;
   font-size: 13px; font-weight: 590; color: var(--label); cursor: pointer; transition: background var(--dur) var(--ease); }
 .seg button[aria-selected="true"] { background: var(--surface); box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+.badge { position: absolute; top: -7px; right: -4px; min-width: 22px; height: 22px; padding: 0 6px;
+  border-radius: 11px; background: var(--red); color: #fff; font-size: 13px; font-weight: 700;
+  font-variant-numeric: tabular-nums; display: grid; place-items: center; line-height: 1; }
 
 /* 商品タイル */
 .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--sp-3); padding: var(--sp-3) var(--sp-4) 0; }
@@ -114,6 +117,8 @@ body {
   box-shadow: inset 0 0.5px 0 var(--separator); }
 .sum { flex: 1; min-width: 0; }
 .sum .cap { font-size: 13px; color: var(--label-2); }
+.sum .cap span { font-weight: 590; color: var(--label); }
+.sum .val { font-variant-numeric: tabular-nums; }
 .sum .val { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 .btn { min-height: 48px; padding: 0 var(--sp-4); border: 0; border-radius: var(--r-md); font: inherit; font-weight: 590;
@@ -212,8 +217,8 @@ body {
 
   <div class="bottom" id="bottomSale">
     <div class="sum">
-      <div class="cap">この注文</div>
-      <div class="val" id="cartQty">0個</div>
+      <div class="cap">この注文 <span id="cartQty">0個</span></div>
+      <div class="val" id="cartAmt">¥0</div>
     </div>
     <button class="btn btn-gray" id="undoBtn" disabled>取り消し</button>
     <button class="btn btn-filled" id="sendBtn" disabled>送信</button>
@@ -259,6 +264,8 @@ const ticketMax = () => (cfg && cfg.ticketMax) || 30;
 const wrap = n => (n - 1) % ticketMax() + 1;
 const waiting = () => orders.filter(o => o.status === 'waiting' || o.status === 'ready').sort((a, b) => a.ts - b.ts);
 const cartQty = () => Object.values(cart).reduce((a, n) => a + n, 0);
+const priceOf = pid => { const p = (cfg && cfg.products || []).find(x => x.id === pid); return p ? Number(p.price) || 0 : 0; };
+const cartAmt = () => Object.keys(cart).reduce((a, pid) => a + priceOf(pid) * cart[pid], 0);
 const itemsText = o => o.items.map(i => i.name + '×' + i.qty).join(' / ');
 
 // ---------- 注文操作 ----------
@@ -287,6 +294,7 @@ function send() {
     const p = (cfg.products || []).find(x => x.id === pid) || { name: '不明', price: 0 };
     return { productId: pid, name: p.name, price: Number(p.price) || 0, qty: cart[pid] };
   });
+  const amount = items.reduce((a, i) => a + i.price * i.qty, 0);
   const o = { id: uid(), ticket, ts: Date.now(), items, status: 'waiting' };
   orders.push(o); store(K.orders, orders);
   enqueue({ type: 'order', id: o.id, ticket: o.ticket, ts: o.ts, items });
@@ -295,7 +303,7 @@ function send() {
   cart = {}; cartLog = [];
   if (navigator.vibrate) navigator.vibrate([16, 40, 16]);
   render();
-  toast('No.' + no + ' を送信（' + qty + '個）', '取り消す', () => voidOrder(o.id));
+  toast('No.' + no + ' を送信（' + qty + '個 ' + yen(amount) + '）', '取り消す', () => voidOrder(o.id));
 }
 function done(id) {
   const o = orders.find(x => x.id === id);
@@ -337,7 +345,9 @@ function render() {
     : 'お渡し待ち ' + w.length + '件';
   const segs = document.querySelectorAll('#paneSeg button');
   segs.forEach(b => b.setAttribute('aria-selected', b.dataset.pane === pane));
-  segs[1].textContent = 'お渡し待ち' + (w.length ? '（' + w.length + '）' : '');
+  const readyCount = w.filter(o => o.status === 'ready').length;
+  segs[1].innerHTML = 'お渡し待ち' + (w.length ? '（' + w.length + '）' : '')
+    + (readyCount ? '<span class="badge">' + readyCount + '</span>' : '');
   $('#paneSale').hidden = pane !== 'sale';
   $('#paneWait').hidden = pane !== 'wait';
   $('#bottomSale').hidden = pane !== 'sale';
@@ -365,6 +375,7 @@ function render() {
   }
   const q = cartQty();
   $('#cartQty').textContent = q + '個';
+  $('#cartAmt').textContent = yen(cartAmt());
   $('#sendBtn').disabled = !q;
   $('#sendBtn').textContent = q ? 'No.' + ticket + ' 送信' : '送信';
   $('#undoBtn').disabled = !cartLog.length;
