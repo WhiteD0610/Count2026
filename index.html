@@ -44,7 +44,9 @@ body {
   backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px); }
 .nav-in { padding: var(--sp-3) var(--sp-4); }
 .nav-top { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--sp-2); }
-.nav h1 { margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
+.edit-hint { font-size: 12px; font-weight: 590; color: var(--accent); white-space: nowrap; }
+.nav h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1;
+  display: flex; align-items: baseline; gap: 8px; white-space: nowrap; }
 .nav .date { font-size: 13px; color: var(--label-2); margin-bottom: 2px; }
 .status { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 var(--sp-3);
   border-radius: 16px; background: var(--fill); font-size: 13px; font-weight: 590; color: var(--label-2); white-space: nowrap; }
@@ -96,11 +98,9 @@ body {
 .wcard.ready { background: color-mix(in srgb, var(--green) 16%, var(--surface)); box-shadow: inset 0 0 0 2px var(--green); }
 .wready { font-size: 22px; font-weight: 700; color: var(--green); letter-spacing: -0.01em; line-height: 1.2; }
 .wcooking { font-size: 15px; font-weight: 590; color: var(--orange); }
-.wno { border: 0; background: none; color: inherit; font-family: inherit; text-align: left; padding: 0; cursor: pointer;
-  font-size: 34px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; font-variant-numeric: tabular-nums;
+.wno { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; font-variant-numeric: tabular-nums;
   width: 64px; flex: none; }
-.wno small { display: block; font-size: 11px; font-weight: 590; color: var(--accent); letter-spacing: 0; }
-.wno:active { opacity: 0.4; }
+.wno small { display: block; font-size: 11px; font-weight: 590; color: var(--label-2); letter-spacing: 0; }
 .witems { flex: 1; min-width: 0; font-size: 15px; }
 .witems .sub { font-size: 13px; color: var(--label-2); }
 .wact { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; flex: none; }
@@ -321,17 +321,10 @@ function voidOrder(id) {
   toast('No.' + o.ticket + ' を取り消しました');
 }
 function setTicket(n) {
-  if (editId) {                                       // 既存注文の番号を修正
-    const o = orders.find(x => x.id === editId);
-    if (o) {
-      o.ticket = n; store(K.orders, orders);
-      enqueue({ type: 'setTicket', id: o.id, ticket: n });
-    }
-  } else {
-    ticket = n; store(K.ticket, ticket);
-    enqueue({ type: 'setSeq', id: 'seq', value: n });  // 他の端末にも反映
-  }
+  ticket = n; store(K.ticket, ticket);
+  enqueue({ type: 'setSeq', id: 'seq', value: n });    // 他の端末にも反映
   render(); openSheet(false);
+  toast('次の整理券を No.' + n + ' にしました');
 }
 
 // ---------- 表示 ----------
@@ -339,7 +332,9 @@ function render() {
   const d = new Date();
   $('#date').textContent = (d.getMonth() + 1) + '月' + d.getDate() + '日（' + '日月火水木金土'[d.getDay()] + '）';
   const w = waiting();
-  $('#head').textContent = pane === 'sale' ? '整理券 No.' + ticket : 'お渡し待ち ' + w.length + '件';
+  $('#head').innerHTML = pane === 'sale'
+    ? '整理券 No.' + ticket + '<span class="edit-hint">変更</span>'
+    : 'お渡し待ち ' + w.length + '件';
   const segs = document.querySelectorAll('#paneSeg button');
   segs.forEach(b => b.setAttribute('aria-selected', b.dataset.pane === pane));
   segs[1].textContent = 'お渡し待ち' + (w.length ? '（' + w.length + '）' : '');
@@ -379,7 +374,7 @@ function render() {
     const rdy = o.status === 'ready';
     return `
     <div class="wcard ${rdy ? 'ready' : ''} ${!rdy && i === 0 ? 'next' : ''}">
-      <button class="wno" data-edit="${esc(o.id)}" aria-label="整理券番号を修正">${o.ticket}<small>整理券 修正</small></button>
+      <div class="wno">${o.ticket}<small>整理券</small></div>
       <div class="witems">
         ${rdy ? '<div class="wready">準備完了</div>' : '<div class="wcooking">調理中</div>'}
         ${esc(itemsText(o))}<div class="sub">${hm(o.ts)} 受付 ・ ${o.items.reduce((a, x) => a + x.qty, 0)}個</div>
@@ -400,26 +395,28 @@ function flash(pid) {
   el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 220);
 }
 
-let sheetMode = null, editId = null;
-function openSheet(v, mode, id) {
+let sheetMode = null;
+function openSheet(v, mode) {
   sheetMode = v ? mode : null;
-  editId = v ? (id || null) : null;
   $('#sheet').classList.toggle('open', v); $('#scrim').classList.toggle('open', v);
   $('#sheet').setAttribute('aria-hidden', !v);
   if (v) renderSheet();
 }
 function renderSheet() {
   if (!sheetMode) return;
-  if (sheetMode === 'ticket' || sheetMode === 'edit') {
+  if (sheetMode === 'ticket') {
     const n = ticketMax();
-    const o = editId ? orders.find(x => x.id === editId) : null;
-    const cur = o ? o.ticket : ticket;
-    $('#sheetTitle').textContent = o ? 'No.' + o.ticket + ' の番号を修正' : '整理券番号を指定';
-    $('#sheetBody').innerHTML = '<div class="tgrid">' +
-      Array.from({ length: n }, (_, i) => i + 1).map(v => `<button data-t="${v}" aria-selected="${v === cur}">${v}</button>`).join('') +
-      '</div><p class="cap-line">' + (o
-        ? 'この注文の整理券番号を選び直します。キッチンの表示にも反映されます。'
-        : '次に発行する番号です。全端末で共有され、1〜' + n + 'を順に使って' + n + 'の次は1に戻ります。') + '</p>';
+    $('#sheetTitle').textContent = '次に発行する整理券番号';
+    $('#sheetBody').innerHTML =
+      '<div class="tgrid">' +
+      Array.from({ length: n }, (_, i) => i + 1).map(v => `<button data-t="${v}" aria-selected="${v === ticket}">${v}</button>`).join('') +
+      '</div>' +
+      '<div style="display:flex;gap:8px;margin-top:12px">' +
+      '<button class="btn btn-tinted" style="flex:1" data-t="1">1に戻す</button>' +
+      '<button class="btn btn-tinted" style="flex:1" data-t="' + (ticket % n + 1) + '">この番号を飛ばす</button>' +
+      '</div>' +
+      '<p class="cap-line">次の注文に付ける番号です。全端末で共有され、1〜' + n + 'を順に使って' + n + 'の次は1に戻ります。' +
+      '紙の整理券をなくした時は番号を飛ばし、テスト後の本番開始時は1に戻してください。</p>';
   } else {
     const st = { waiting: '調理中', ready: '準備完了', done: 'お渡し済', void: '取消' };
     const today = orders.filter(o => dayKey(o.ts) === dayKey(Date.now())).slice().reverse();
@@ -613,7 +610,6 @@ $('#head').addEventListener('click', () => { if (pane === 'sale') openSheet(true
 $('#histBtn').addEventListener('click', () => openSheet(true, 'history'));
 $('#paneSeg').addEventListener('click', e => { const b = e.target.closest('[data-pane]'); if (b) setPane(b.dataset.pane); });
 $('#waitlist').addEventListener('click', e => {
-  const ed = e.target.closest('[data-edit]'); if (ed) { openSheet(true, 'edit', ed.dataset.edit); return; }
   const d = e.target.closest('[data-done]'); if (d) { done(d.dataset.done); return; }
   const v = e.target.closest('[data-void]'); if (v) { voidOrder(v.dataset.void); return; }
 });
