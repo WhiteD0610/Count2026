@@ -52,9 +52,6 @@ body {
 .status.ok i { background: var(--green); }
 .status.warn i { background: var(--orange); }
 .status.err i { background: var(--red); }
-.lock-btn { width: 40px; height: 40px; display: grid; place-items: center; border: 0; background: none;
-  color: var(--label-2); cursor: pointer; margin-right: -8px; }
-.lock-btn:active { opacity: 0.4; }
 .seg { display: flex; padding: 2px; background: var(--fill); border-radius: 9px; margin-top: var(--sp-3); }
 .seg button { flex: 1; min-height: 34px; border: 0; border-radius: 7px; background: none; font: inherit;
   font-size: 13px; font-weight: 590; color: var(--label); cursor: pointer; transition: background var(--dur) var(--ease); }
@@ -92,6 +89,9 @@ body {
 .waitlist { padding: var(--sp-3) var(--sp-4) 0; display: grid; gap: var(--sp-3); }
 .wcard { background: var(--surface); border-radius: var(--r-lg); padding: var(--sp-4); display: flex; align-items: center; gap: var(--sp-4); }
 .wcard.next { box-shadow: inset 0 0 0 2px var(--accent); }
+.wcard.ready { background: color-mix(in srgb, var(--green) 16%, var(--surface)); box-shadow: inset 0 0 0 2px var(--green); }
+.wready { font-size: 22px; font-weight: 700; color: var(--green); letter-spacing: -0.01em; line-height: 1.2; }
+.wcooking { font-size: 15px; font-weight: 590; color: var(--orange); }
 .wno { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; font-variant-numeric: tabular-nums;
   width: 64px; flex: none; }
 .wno small { display: block; font-size: 11px; font-weight: 590; color: var(--label-2); letter-spacing: 0; }
@@ -162,28 +162,12 @@ body {
   font-size: 17px; font-weight: 590; font-variant-numeric: tabular-nums; color: var(--label); cursor: pointer; }
 .tgrid button[aria-selected="true"] { background: var(--accent); color: #fff; }
 
-/* ログイン */
-.login { max-width: 400px; margin: 18vh auto 0; padding: 0 var(--sp-4); }
-.login h1 { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 var(--sp-2); }
-.login p { color: var(--label-2); font-size: 15px; margin: 0 0 var(--sp-6); }
-.login .field { width: 100%; min-height: 48px; padding: var(--sp-2) var(--sp-4); border: 0; border-radius: var(--r-md);
-  background: var(--surface); font: inherit; color: var(--label); margin-bottom: var(--sp-3); }
-.login .field:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
-.err-t { color: var(--red); font-size: 13px; min-height: 20px; margin: 0 var(--sp-1) var(--sp-3); }
 [hidden] { display: none !important; }
 </style>
 </head>
 <body>
 
-<section class="login" id="loginView" hidden>
-  <h1>販売カウント</h1>
-  <p>スタッフ用パスワードを入力してください。一度入れると、この端末では次回から入力不要です。</p>
-  <input class="field" id="pass" type="password" placeholder="パスワード" autocomplete="current-password">
-  <div class="err-t" id="loginErr"></div>
-  <button class="btn btn-filled block" id="loginBtn">開始</button>
-</section>
-
-<div id="appView" hidden>
+<div id="appView">
   <header class="nav">
     <div class="nav-in">
       <div class="nav-top">
@@ -191,12 +175,7 @@ body {
           <div class="date" id="date"></div>
           <h1 id="head">整理券 No.1</h1>
         </div>
-        <div style="display:flex;align-items:center;gap:2px">
-          <div class="status" id="status"><i></i><span>確認中</span></div>
-          <button class="lock-btn" id="lockBtn" aria-label="ロック">
-            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="9.5" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></svg>
-          </button>
-        </div>
+        <div class="status" id="status"><i></i><span>確認中</span></div>
       </div>
       <div class="seg" id="paneSeg">
         <button data-pane="sale" aria-selected="true">注文入力</button>
@@ -243,8 +222,7 @@ body {
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbxPALiGXxYTYIFeYSu-rxp0tUIAB3Cdlr367EIkegSQUBscC3j20GNnxwiaiwWgaEgb/exec';
 // ================================================================
 
-const K = { cfg: 'churro_cfg_v2', orders: 'churro_orders_v2', queue: 'churro_queue_v2',
-            key: 'churro_staff_key', ticket: 'churro_ticket_v2' };
+const K = { cfg: 'churro_cfg_v2', orders: 'churro_orders_v2', queue: 'churro_queue_v2', ticket: 'churro_ticket_v2' };
 const $ = s => document.querySelector(s);
 const load = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } };
 const store = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
@@ -263,10 +241,9 @@ let ticket = load(K.ticket, 1);
 let cart = {}, cartLog = [];
 let pane = 'sale';
 let online = null;
-let key = localStorage.getItem(K.key) || '';
 
 const ticketMax = () => (cfg && cfg.ticketMax) || 30;
-const waiting = () => orders.filter(o => o.status === 'waiting').sort((a, b) => a.ts - b.ts);
+const waiting = () => orders.filter(o => o.status === 'waiting' || o.status === 'ready').sort((a, b) => a.ts - b.ts);
 const cartQty = () => Object.values(cart).reduce((a, n) => a + n, 0);
 const itemsText = o => o.items.map(i => i.name + '×' + i.qty).join(' / ');
 
@@ -308,7 +285,7 @@ function send() {
 }
 function done(id) {
   const o = orders.find(x => x.id === id);
-  if (!o || o.status !== 'waiting') return;
+  if (!o || o.status !== 'ready') return;
   o.status = 'done'; o.doneAt = Date.now(); store(K.orders, orders);
   enqueue({ type: 'done', id, ts: o.doneAt });
   render();
@@ -317,7 +294,7 @@ function done(id) {
 function reopen(id) {
   const o = orders.find(x => x.id === id);
   if (!o || o.status === 'void') return;
-  o.status = 'waiting'; delete o.doneAt; store(K.orders, orders);
+  o.status = 'ready'; delete o.doneAt; store(K.orders, orders);
   enqueue({ type: 'reopen', id });
   render();
 }
@@ -372,15 +349,21 @@ function render() {
   $('#undoBtn').disabled = !cartLog.length;
 
   $('#waitEmpty').hidden = !!w.length;
-  $('#waitlist').innerHTML = w.map((o, i) => `
-    <div class="wcard ${i === 0 ? 'next' : ''}">
+  $('#waitlist').innerHTML = w.map((o, i) => {
+    const rdy = o.status === 'ready';
+    return `
+    <div class="wcard ${rdy ? 'ready' : ''} ${!rdy && i === 0 ? 'next' : ''}">
       <div class="wno">${o.ticket}<small>整理券</small></div>
-      <div class="witems">${esc(itemsText(o))}<div class="sub">${hm(o.ts)} 受付 ・ ${o.items.reduce((a, x) => a + x.qty, 0)}個</div></div>
+      <div class="witems">
+        ${rdy ? '<div class="wready">準備完了</div>' : '<div class="wcooking">調理中</div>'}
+        ${esc(itemsText(o))}<div class="sub">${hm(o.ts)} 受付 ・ ${o.items.reduce((a, x) => a + x.qty, 0)}個</div>
+      </div>
       <div class="wact">
-        <button class="btn btn-green sm" data-done="${esc(o.id)}">お渡し完了</button>
+        <button class="btn btn-green sm" data-done="${esc(o.id)}" ${rdy ? '' : 'disabled'}>お渡し完了</button>
         <button class="btn btn-plain red" data-void="${esc(o.id)}" style="min-height:32px;font-size:13px">注文を取消</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 
   renderSheet();
 }
@@ -407,7 +390,7 @@ function renderSheet() {
       Array.from({ length: n }, (_, i) => i + 1).map(v => `<button data-t="${v}" aria-selected="${v === ticket}">${v}</button>`).join('') +
       '</div><p class="cap-line">次に発行する番号です。1〜' + n + 'を順に使い、' + n + 'の次は1に戻ります。</p>';
   } else {
-    const st = { waiting: 'お渡し待ち', done: 'お渡し済', void: '取消' };
+    const st = { waiting: '調理中', ready: '準備完了', done: 'お渡し済', void: '取消' };
     const today = orders.filter(o => dayKey(o.ts) === dayKey(Date.now())).slice().reverse();
     $('#sheetTitle').textContent = '本日の注文';
     $('#sheetBody').innerHTML = today.length
@@ -453,16 +436,16 @@ function scheduleFlush() { clearTimeout(flushTimer); flushTimer = setTimeout(flu
 
 async function flush() {
   renderStatus();
-  if (!GAS_URL || !key || syncing || !queue.length) return;
+  if (!GAS_URL || syncing || !queue.length) return;
   syncing = true;
   const batch = queue.slice(0, 50);
   try {
     const r = await fetch(GAS_URL, {
       method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'sync', key, events: batch })
+      body: JSON.stringify({ action: 'sync', events: batch })
     });
     const j = await r.json();
-    if (!j.ok) { if (j.error === 'auth') { lock('パスワードが変更されました。入力し直してください。'); return; } throw new Error(j.error || 'error'); }
+    if (!j.ok) throw new Error(j.error || 'error');
     const sent = new Set(batch.map(e => e.eid));
     queue = queue.filter(e => !sent.has(e.eid));
     store(K.queue, queue);
@@ -476,14 +459,37 @@ async function flush() {
 }
 
 async function fetchConfig() {
-  if (!GAS_URL || !key) { renderStatus(); return; }
+  if (!GAS_URL) { renderStatus(); return; }
   try {
-    const r = await fetch(GAS_URL + '?action=config&key=' + encodeURIComponent(key) + '&t=' + Date.now());
+    const r = await fetch(GAS_URL + '?action=config&t=' + Date.now());
     const j = await r.json();
-    if (!j.ok) { if (j.error === 'auth') { lock('パスワードが変更されました。入力し直してください。'); return; } throw new Error(j.error); }
+    if (!j.ok) throw new Error(j.error);
     applyReset(j.config.resetAt || 0);
     cfg = j.config; store(K.cfg, cfg);
     online = true; render();
+  } catch (e) {
+    if (!queue.length) online = false;
+  }
+  renderStatus();
+}
+
+// キッチン側の「調理完了」を取り込む
+async function fetchOrders() {
+  if (!GAS_URL) return;
+  try {
+    const r = await fetch(GAS_URL + '?action=orders&t=' + Date.now());
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error);
+    const pending = new Set(queue.map(e => e.id));
+    const srv = {}; j.orders.forEach(o => srv[o[0]] = o[4]);
+    let changed = false;
+    orders.forEach(o => {
+      if (pending.has(o.id)) return;                 // 未送信の操作がある注文は触らない
+      const st = srv[o.id];
+      if (st && st !== o.status && (o.status === 'waiting' || o.status === 'ready')) { o.status = st; changed = true; }
+    });
+    if (changed) { store(K.orders, orders); render(); }
+    online = true;
   } catch (e) {
     if (!queue.length) online = false;
   }
@@ -498,38 +504,7 @@ function applyReset(resetAt) {
   store(K.orders, orders); store(K.queue, queue);
 }
 
-// ---------- 認証 ----------
-async function login() {
-  const v = $('#pass').value.trim();
-  if (!v) return;
-  if (!GAS_URL) { $('#loginErr').textContent = 'register.html 内の GAS_URL を設定してください'; return; }
-  $('#loginErr').textContent = '確認中…';
-  try {
-    const r = await fetch(GAS_URL + '?action=config&key=' + encodeURIComponent(v) + '&t=' + Date.now());
-    const j = await r.json();
-    if (!j.ok) { $('#loginErr').textContent = j.error === 'auth' ? 'パスワードが違います' : String(j.error); return; }
-    key = v; localStorage.setItem(K.key, key);
-    applyReset(j.config.resetAt || 0);
-    cfg = j.config; store(K.cfg, cfg); online = true;
-    $('#pass').value = ''; $('#loginErr').textContent = '';
-    unlock();
-  } catch (e) {
-    $('#loginErr').textContent = '接続できません。通信環境を確認してください。';
-  }
-}
-function unlock() { $('#loginView').hidden = true; $('#appView').hidden = false; render(); renderStatus(); flush(); }
-function lock(msg) {
-  key = ''; localStorage.removeItem(K.key);
-  $('#appView').hidden = true; $('#loginView').hidden = false;
-  $('#loginErr').textContent = msg || '';
-  openSheet(false);
-}
-
 // ---------- イベント ----------
-$('#loginBtn').addEventListener('click', login);
-$('#pass').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
-$('#lockBtn').addEventListener('click', () => lock(''));
-
 $('#grid').addEventListener('click', e => {
   const m = e.target.closest('[data-minus]');
   if (m) { e.stopPropagation(); sub(m.dataset.minus); return; }
@@ -571,14 +546,16 @@ document.addEventListener('touchend', e => {
 }, { passive: true });
 
 window.addEventListener('online', flush);
-document.addEventListener('visibilitychange', () => { if (!document.hidden && key) { fetchConfig(); flush(); render(); } });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { fetchConfig(); fetchOrders(); flush(); render(); } });
 
 orders = orders.filter(o => o.ts > Date.now() - 3 * 864e5); store(K.orders, orders);
 
-if (key) { unlock(); fetchConfig(); } else { $('#loginView').hidden = false; }
-setInterval(() => { if (key) flush(); }, 5000);
-setInterval(() => { if (key) fetchConfig(); }, 60000);
-setInterval(() => { if (key) render(); }, 60000);
+render(); renderStatus();
+fetchConfig(); fetchOrders(); flush();
+setInterval(flush, 5000);
+setInterval(fetchOrders, 4000);
+setInterval(fetchConfig, 60000);
+setInterval(render, 60000);
 </script>
 </body>
 </html>
