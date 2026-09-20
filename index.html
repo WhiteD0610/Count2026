@@ -131,6 +131,7 @@ body {
 .btn-gray { background: var(--fill); color: var(--label); }
 .btn-plain { background: none; color: var(--accent); padding: 0 var(--sp-2); min-height: 40px; }
 .btn-plain.red { color: var(--red); }
+.btn-danger { background: var(--red); color: #fff; }
 .btn:disabled { opacity: 0.35; pointer-events: none; }
 .btn.block { width: 100%; }
 .btn.sm { min-height: 40px; font-size: 15px; padding: 0 var(--sp-3); }
@@ -167,6 +168,18 @@ body {
 .row .n { flex: 1; min-width: 0; font-size: 15px; }
 .row .st { font-size: 13px; color: var(--label-2); }
 .row.void .no, .row.void .n, .row.void .t { text-decoration: line-through; color: var(--label-3); }
+.hold { position: relative; overflow: hidden; min-height: 34px; padding: 0 var(--sp-3); border: 0; border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--red) 10%, transparent); color: var(--red); font: inherit; font-size: 13px;
+  font-weight: 590; cursor: pointer; touch-action: none; user-select: none; display: inline-flex; align-items: center; justify-content: center; }
+.hold .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--red); opacity: 0.35; }
+.hold .lbl { position: relative; }
+.hold.holding { color: var(--red); background: color-mix(in srgb, var(--red) 16%, transparent); }
+.field { width: 100%; min-height: 48px; padding: var(--sp-3) var(--sp-4); border: 0; border-radius: var(--r-md);
+  background: var(--surface); font: inherit; color: var(--label); -webkit-user-select: text; user-select: text; }
+.field:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
+.chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-3) 0; }
+.chips button { min-height: 40px; padding: 0 var(--sp-3); border: 0; border-radius: var(--r-md); background: var(--fill);
+  font: inherit; font-size: 15px; color: var(--label); cursor: pointer; }
 .cap-line { font-size: 13px; color: var(--label-2); margin: var(--sp-3) var(--sp-3) 0; }
 .tgrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--sp-2); }
 .tgrid button { min-height: 52px; border: 0; border-radius: var(--r-md); background: var(--surface); font: inherit;
@@ -320,13 +333,50 @@ function reopen(id) {
   enqueue({ type: 'reopen', id });
   render();
 }
-function voidOrder(id) {
+function voidOrder(id, reason) {
   const o = orders.find(x => x.id === id);
   if (!o || o.status === 'void') return;
+  const wasReady = o.status === 'ready';
   o.status = 'void'; store(K.orders, orders);
-  enqueue({ type: 'void', id });
+  enqueue({
+    type: 'void', id, reason: reason || '',
+    surplus: wasReady ? o.items.map(i => ({ productId: i.productId, qty: i.qty })) : null
+  });
   render();
-  toast('No.' + o.ticket + ' を取り消しました');
+  toast('No.' + o.ticket + ' を取り消しました' + (wasReady ? '（余剰在庫に戻しました）' : ''));
+}
+
+// 長押し（3秒）で取消
+let hold = null;
+function holdStart(el, id) {
+  const fill = el.querySelector('.fill');
+  fill.style.transition = '';
+  el.classList.add('holding');
+  const t0 = performance.now();
+  const step = now => {
+    const p = Math.min(1, (now - t0) / 3000);
+    fill.style.width = (p * 100) + '%';
+    if (navigator.vibrate && p < 1 && Math.floor(p * 3) !== Math.floor(((now - 16 - t0) / 3000) * 3)) navigator.vibrate(8);
+    if (p >= 1) { holdCancel(); if (navigator.vibrate) navigator.vibrate([60, 40, 60]); askVoid(id); return; }
+    hold.raf = requestAnimationFrame(step);
+  };
+  hold = { el, id, raf: requestAnimationFrame(step) };
+}
+function holdCancel() {
+  if (!hold) return;
+  cancelAnimationFrame(hold.raf);
+  const el = hold.el, fill = el.querySelector('.fill');
+  el.classList.remove('holding');
+  fill.style.transition = 'width 160ms linear';
+  fill.style.width = '0%';
+  hold = null;
+  render();
+}
+function askVoid(id) {
+  const o = orders.find(x => x.id === id);
+  if (!o) return;
+  if (o.status === 'ready') openSheet(true, 'reason', id);   // 調理済み → 理由を入力
+  else voidOrder(id);
 }
 function setTicket(n) {
   ticket = n; store(K.ticket, ticket);
@@ -381,7 +431,7 @@ function render() {
   $('#undoBtn').disabled = !cartLog.length;
 
   $('#waitEmpty').hidden = !!w.length;
-  $('#waitlist').innerHTML = w.map((o, i) => {
+  if (!hold) $('#waitlist').innerHTML = w.map((o, i) => {
     const rdy = o.status === 'ready';
     return `
     <div class="wcard ${rdy ? 'ready' : ''} ${!rdy && i === 0 ? 'next' : ''}">
@@ -392,7 +442,7 @@ function render() {
       </div>
       <div class="wact">
         <button class="btn btn-green sm" data-done="${esc(o.id)}" ${rdy ? '' : 'disabled'}>お渡し完了</button>
-        <button class="btn btn-plain red" data-void="${esc(o.id)}" style="min-height:32px;font-size:13px">注文を取消</button>
+        <button class="hold" data-hold="${esc(o.id)}"><span class="fill"></span><span class="lbl">長押しで取消</span></button>
       </div>
     </div>`;
   }).join('');
@@ -406,15 +456,29 @@ function flash(pid) {
   el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 220);
 }
 
-let sheetMode = null;
-function openSheet(v, mode) {
+let sheetMode = null, targetId = null;
+function openSheet(v, mode, id) {
   sheetMode = v ? mode : null;
+  targetId = v ? (id || null) : null;
   $('#sheet').classList.toggle('open', v); $('#scrim').classList.toggle('open', v);
   $('#sheet').setAttribute('aria-hidden', !v);
   if (v) renderSheet();
 }
 function renderSheet() {
   if (!sheetMode) return;
+  if (sheetMode === 'reason') {
+    if ($('#reasonText')) return;                    // 入力中は作り直さない
+    const o = orders.find(x => x.id === targetId);
+    if (!o) { openSheet(false); return; }
+    $('#sheetTitle').textContent = 'No.' + o.ticket + ' を取消';
+    $('#sheetBody').innerHTML =
+      '<p class="cap-line" style="margin:0 4px 12px">' + esc(itemsText(o)) + ' は調理済みです。取消理由を入力すると、キッチンの余剰在庫に戻ります。</p>' +
+      '<input class="field" id="reasonText" placeholder="取消理由" value="">' +
+      '<div class="chips">' + ['お客様都合', '渡し間違い', '時間切れ', '商品不良']
+        .map(r => `<button data-reason="${r}">${r}</button>`).join('') + '</div>' +
+      '<button class="btn btn-danger block" id="voidGo">この注文を取消して在庫に戻す</button>';
+    return;
+  }
   if (sheetMode === 'ticket') {
     const n = ticketMax();
     $('#sheetTitle').textContent = '次に発行する整理券番号';
@@ -622,9 +686,24 @@ $('#histBtn').addEventListener('click', () => openSheet(true, 'history'));
 $('#paneSeg').addEventListener('click', e => { const b = e.target.closest('[data-pane]'); if (b) setPane(b.dataset.pane); });
 $('#waitlist').addEventListener('click', e => {
   const d = e.target.closest('[data-done]'); if (d) { done(d.dataset.done); return; }
-  const v = e.target.closest('[data-void]'); if (v) { voidOrder(v.dataset.void); return; }
 });
+$('#waitlist').addEventListener('pointerdown', e => {
+  const h = e.target.closest('[data-hold]');
+  if (!h) return;
+  e.preventDefault();
+  holdStart(h, h.dataset.hold);
+});
+['pointerup', 'pointercancel', 'pointerleave'].forEach(ev =>
+  document.addEventListener(ev, () => { if (hold) holdCancel(); }));
 $('#sheetBody').addEventListener('click', e => {
+  const rc = e.target.closest('[data-reason]');
+  if (rc) { $('#reasonText').value = rc.dataset.reason; return; }
+  if (e.target.closest('#voidGo')) {
+    const reason = ($('#reasonText').value || '').trim();
+    if (!reason) { $('#reasonText').focus(); toast('取消理由を入力してください'); return; }
+    const id = targetId; openSheet(false); voidOrder(id, reason);
+    return;
+  }
   const t = e.target.closest('[data-t]'); if (t) { setTicket(+t.dataset.t); return; }
   const r = e.target.closest('[data-reopen]'); if (r) { reopen(r.dataset.reopen); return; }
 });
